@@ -7,6 +7,12 @@ const router = useRouter()
 const searchStore = useSearchStore()
 const { debouncedSearch } = useSearchMusic()
 
+const loadingMore = ref(false)
+const limit = ref(20)
+const observer = ref(null)
+const loadMoreTrigger = ref(null)
+const isInitialLoad = ref(true)
+
 // Load recent searches on mount
 onMounted(() => {
     searchStore.loadRecentSearches()
@@ -15,7 +21,9 @@ onMounted(() => {
     const urlQuery = route.query.q
     if (urlQuery) {
         searchStore.setQuery(urlQuery)
-        debouncedSearch(urlQuery, 20)
+        limit.value = 20
+        isInitialLoad.value = true
+        debouncedSearch(urlQuery, limit.value)
     } else {
         // Clear results if no query in URL
         searchStore.clearResults()
@@ -25,15 +33,100 @@ onMounted(() => {
 // Clear results when leaving the page
 onBeforeUnmount(() => {
     searchStore.clearResults()
+    if (observer.value) {
+        observer.value.disconnect()
+        observer.value = null
+    }
 })
 
 // Watch for URL query changes
 watch(() => route.query.q, (newQuery) => {
     if (newQuery) {
+        // Disconnect observer saat query baru
+        if (observer.value) {
+            observer.value.disconnect()
+            observer.value = null
+        }
+
         searchStore.setQuery(newQuery)
-        debouncedSearch(newQuery, 20)
+        limit.value = 20
+        isInitialLoad.value = true
+        debouncedSearch(newQuery, limit.value)
     } else {
         searchStore.clearResults()
+    }
+})
+
+const handleLoadMore = async () => {
+    // Prevent multiple simultaneous loads
+    if (loadingMore.value || !hasMoreResults.value || isInitialLoad.value) return
+
+    loadingMore.value = true
+
+    // Disconnect observer temporarily
+    if (observer.value) {
+        observer.value.disconnect()
+    }
+
+    limit.value += 20
+
+    try {
+        await debouncedSearch(searchStore.query, limit.value)
+    } finally {
+        loadingMore.value = false
+
+        // Reconnect observer after load complete
+        nextTick(() => {
+            setupInfiniteScroll()
+        })
+    }
+}
+
+const hasMoreResults = computed(() => {
+    return searchStore.results.length < searchStore.totalResults
+})
+
+const setupInfiniteScroll = () => {
+    if (!loadMoreTrigger.value) return
+
+    // Disconnect existing observer if any
+    if (observer.value) {
+        observer.value.disconnect()
+    }
+
+    observer.value = new IntersectionObserver(
+        (entries) => {
+            const entry = entries[0]
+
+            // Only trigger if not initial load and conditions are met
+            if (entry.isIntersecting && !isInitialLoad.value && hasMoreResults.value && !loadingMore.value) {
+                handleLoadMore()
+            }
+        },
+        {
+            root: null,
+            rootMargin: '200px', // Increased margin for better UX
+            threshold: 0
+        }
+    )
+
+    observer.value.observe(loadMoreTrigger.value)
+}
+
+// Watch for results and setup observer
+watch(() => searchStore.results.length, (newLength, oldLength) => {
+    if (newLength > 0) {
+        // Mark initial load as complete after first results
+        if (isInitialLoad.value && newLength === 20) {
+            isInitialLoad.value = false
+        }
+
+        // Only setup observer if length changed (new data loaded)
+        if (newLength !== oldLength) {
+            nextTick(() => {
+                setupInfiniteScroll()
+            })
+        }
     }
 })
 
@@ -61,8 +154,9 @@ const formatDuration = (ms) => {
 <template>
     <div class="container mx-auto px-4 py-6">
         <!-- Loading State -->
-        <div v-if="searchStore.loading" class="flex flex-col gap-1">
+        <div v-if="searchStore.loading && isInitialLoad" class="flex flex-col gap-1">
             <div v-for="n in 5" :key="n" class="flex items-center gap-4 px-4 py-3">
+                <div class="skeleton w-8 shrink-0"></div>
                 <div class="skeleton w-12 h-12 rounded shrink-0"></div>
                 <div class="flex-1 space-y-2">
                     <div class="skeleton h-4 w-3/4"></div>
@@ -93,9 +187,25 @@ const formatDuration = (ms) => {
                 </h1>
             </div>
 
+            <!-- Table Header -->
+            <div class="flex items-center gap-4 px-4 py-2 mb-1">
+                <div class="w-8 text-sm font-semibold opacity-70">#</div>
+                <div class="w-12 shrink-0 text-sm font-semibold opacity-70">Title</div>
+                <div class="flex-1"></div>
+                <div class="w-12 text-sm font-semibold opacity-70 text-right">Duration</div>
+            </div>
+            <div class="border-b border-base-300 mb-2"></div>
+
+            <!-- Results List -->
             <div class="flex flex-col gap-1">
-                <SearchSongItem v-for="track in searchStore.results" :key="track.id" :track="track"
-                    :duration="formatDuration(track.duration)" />
+                <SearchSongItem v-for="(track, index) in searchStore.results" :key="`${track.id}-${index}`"
+                    :track="track" :index="index + 1" :duration="formatDuration(track.duration)" />
+            </div>
+
+            <!-- Infinite Scroll Trigger -->
+            <div ref="loadMoreTrigger" class="h-20 flex items-center justify-center">
+                <span v-if="loadingMore && hasMoreResults" class="loading loading-spinner loading-md"></span>
+                <span v-else-if="!hasMoreResults" class="text-sm opacity-50">No more results</span>
             </div>
         </div>
 

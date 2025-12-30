@@ -13,6 +13,10 @@ const props = defineProps({
     duration: {
         type: String,
         default: '0:00'
+    },
+    index: {
+        type: Number,
+        default: 0
     }
 })
 
@@ -28,14 +32,19 @@ const coverUrl = computed(() => {
 
 <template>
     <div class="
-    group
-    flex items-center gap-4
-    px-4 py-3
-    rounded-lg
-    hover:bg-base-200
-    transition
-    cursor-pointer
-  ">
+        group
+        flex items-center gap-4
+        px-4 py-3
+        rounded-lg
+        hover:bg-base-200
+        transition
+        cursor-pointer
+    ">
+        <!-- INDEX NUMBER -->
+        <div class="w-8 text-sm opacity-50 group-hover:opacity-100 transition">
+            {{ index }}
+        </div>
+
         <!-- COVER -->
         <div class="relative w-12 h-12 shrink-0">
             <img :src="coverUrl" :alt="track.title" class="w-full h-full rounded object-cover"
@@ -43,22 +52,22 @@ const coverUrl = computed(() => {
 
             <!-- DARK OVERLAY -->
             <div class="
-        absolute inset-0
-        bg-black/50
-        opacity-0
-        group-hover:opacity-100
-        transition
-        rounded
-      "></div>
+                absolute inset-0
+                bg-black/50
+                opacity-0
+                group-hover:opacity-100
+                transition
+                rounded
+            "></div>
 
             <!-- PLAY ICON -->
             <div class="
-        absolute inset-0
-        flex items-center justify-center
-        opacity-0
-        group-hover:opacity-100
-        transition
-      ">
+                absolute inset-0
+                flex items-center justify-center
+                opacity-0
+                group-hover:opacity-100
+                transition
+            ">
                 <Play class="w-6 h-6 text-white" />
             </div>
         </div>
